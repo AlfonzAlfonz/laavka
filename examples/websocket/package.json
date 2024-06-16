@@ -1,0 +1,17 @@
+{
+  "name": "@laavka-example/websocket",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "start:server": "tsx server.ts",
+    "start:client": "tsx client.ts"
+  },
+  "dependencies": {
+    "@types/ws": "^8.5.10",
+    "ws": "^8.17.1"
+  },
+  "devDependencies": {
+    "tsx": "^4.15.5"
+  }
+}
