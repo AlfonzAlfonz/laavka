@@ -1,3 +1,4 @@
+import { nanoid } from "nanoid";
 import { SerializedError } from "./SerializedError";
 import {
 	BridgeRequest,
@@ -9,7 +10,7 @@ import { Unreachable } from "./utils/errors";
 import { isBridgeSubRequest } from "./validations";
 
 export class ResponseServer<TBridge extends object> {
-	private ctx = new Map<string, RequestContext>();
+	public readonly ctx = new Map<string, RequestContext>();
 
 	constructor(
 		private requestHandler: TBridge,
@@ -24,7 +25,10 @@ export class ResponseServer<TBridge extends object> {
 	 */
 	async createResponse<TCh extends string>(
 		request: BridgeRequest<unknown[], TCh> | BridgeSubRequest<TCh>,
-		{ onReject = this.defaultOptions.onReject }: CreateResponseOptions = {},
+		{
+			onReject = this.defaultOptions.onReject,
+			sesh,
+		}: CreateResponseOptions = {},
 	): Promise<BridgeResponse<unknown, TCh>> {
 		if (isBridgeSubRequest(request, request.channel)) {
 			return this.createSubResponse(request, { onReject });
@@ -32,10 +36,14 @@ export class ResponseServer<TBridge extends object> {
 
 		try {
 			const handler = resolvePath(this.requestHandler, request.path);
-			const result = await handler(...request.args);
+			const result: any = await handler(...request.args);
 
 			if (isAsyncIterator(result)) {
-				this.ctx.set(request.id, { type: "async-iterator", iterator: result });
+				this.ctx.set(request.id, {
+					type: "async-iterator",
+					iterator: result,
+					sesh,
+				});
 
 				return {
 					type: BridgeResponseType.ResponseIterator,
@@ -45,6 +53,12 @@ export class ResponseServer<TBridge extends object> {
 			}
 
 			if (typeof result === "function") {
+				this.ctx.set(request.id, {
+					type: "function",
+					function: result,
+					sesh,
+				});
+
 				return {
 					type: BridgeResponseType.ResponseFunction,
 					channel: request.channel,
@@ -67,6 +81,14 @@ export class ResponseServer<TBridge extends object> {
 				error: SerializedError.toJSON(error),
 			};
 		}
+	}
+
+	public getSeshToken(): SeshToken {
+		return {
+			seshTokenSymbol,
+			id: nanoid(),
+			createdAt: Date.now(),
+		};
 	}
 
 	private async createSubResponse<TCh extends string>(
@@ -107,6 +129,8 @@ export class ResponseServer<TBridge extends object> {
 
 		if (subRequest.subRequest === "function-call" && item.type === "function") {
 			const result = await item.function(...(subRequest.args as never[]));
+			this.ctx.delete(subRequest.id);
+
 			return {
 				type: BridgeResponseType.ResponseIteratorNext,
 				channel: subRequest.channel,
@@ -121,11 +145,22 @@ export class ResponseServer<TBridge extends object> {
 	}
 }
 
+const seshTokenSymbol = Symbol("seshToken");
+
 interface CreateResponseOptions {
 	onReject?: (e: unknown) => unknown;
+	sesh?: SeshToken;
 }
 
-type RequestContext =
+interface SeshToken {
+	seshTokenSymbol: typeof seshTokenSymbol;
+	id: string;
+	createdAt: number;
+}
+
+type RequestContext = {
+	sesh?: SeshToken;
+} & (
 	| {
 			type: "async-iterator";
 			iterator: AsyncIterator<unknown>;
@@ -133,7 +168,8 @@ type RequestContext =
 	| {
 			type: "function";
 			function: (...args: never[]) => unknown;
-	  };
+	  }
+);
 
 const resolvePath = (requestHandler: object, path: string[]) => {
 	if (path.length === 0) Unreachable.throw();

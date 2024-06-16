@@ -17,6 +17,8 @@ export class BridgeHandler {
 const handler = new ResponseServer(new BridgeHandler());
 
 wss.on("connection", (ws) => {
+	const sesh = handler.getSeshToken();
+
 	ws.on("error", console.error);
 
 	ws.on("message", async (raw) => {
@@ -25,7 +27,7 @@ wss.on("connection", (ws) => {
 		// Test if the message is a valid bridge request
 		if (isBridgeRequest(data)) {
 			// Create a response for the request
-			const res = await handler.createResponse(data);
+			const res = await handler.createResponse(data, { sesh });
 			console.log("responding with:", res);
 
 			// Send the response to the client
